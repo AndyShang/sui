@@ -16,6 +16,7 @@ var dom = fl.getDocumentDOM();
 var lib = dom.library;
 
 var currentItem;
+var atlas = XML('<TextureAtlas />');
 var bitmapsToExport = {};
 var phasedItems = {};
 var conf = {};
@@ -49,8 +50,8 @@ function exportStarling()
 		}
 	}
 	exportBitmaps();
-	conf.bitmaps = bitmapsToExport;
-	FLfile.write(dom.pathURI + ".json", encode(conf))
+	FLfile.write(dom.pathURI + ".json", encode(conf));
+	FLfile.write(dom.pathURI + ".xml", atlas);
 }
 
 function deleteTempBitmaps()
@@ -88,6 +89,16 @@ function selectTimeline()
 function selectLayer(layer)
 {
 	var index = 0;
+	var locked = layer.locked;
+	var visible = layer.visible;
+	if(locked)
+	{
+		layer.locked = false;
+	}
+	if(!visible)
+	{
+		layer.visible = true;
+	}
 	do
 	{
 		fl.getDocumentDOM().getTimeline().setSelectedFrames(index, index);
@@ -101,6 +112,8 @@ function selectLayer(layer)
 		index = nextKeyFrame(layer, index);
 	}
 	while(index != -1);
+	layer.locked = locked;
+	layer.visible = visible;
 }
 
 function nextKeyFrame(layer, index)
@@ -177,15 +190,14 @@ function exportBitmaps()
 	dom.setFillColor('#00000000');
 	dom.selectAll();
 	dom.convertSelectionToBitmap();
-	fl.trace("save to:" + dom.pathURI + ".png");
 	
 	var tempBitmap = dom.selection[0].libraryItem;
 	tempBitmap.exportToFile(dom.pathURI + ".png");
 	lib.selectItem(tempBitmap.name);
 	lib.deleteItem();
-	//lib.selectItem('__sui_temp');
-	//lib.deleteItem();	
-	//deleteTempBitmaps();
+	lib.selectItem('__sui_temp');
+	lib.deleteItem();	
+	deleteTempBitmaps();
 }
 
 function addSymbolConf(instance)
@@ -302,24 +314,8 @@ function packTextures(widthDefault, padding, rectMap, verticalSide)
 			height = rect.obj.vPixels + padding;
 			if (area.width >= width && area.height >= height) 
 			{
-				//place portrait texture
-				if(
-					verticalSide?
-					(
-						height > width * 4?
-						(
-							areaID > 0?
-							(area.height - height >= remainAreaList[areaID - 1].height):
-							true
-						):
-						true
-					):
-					true
-				)
-				{
-					isFit = true;
-					break;
-				}
+				isFit = true;
+				break;
 			}
 			rectID ++;
 		}
@@ -329,10 +325,13 @@ function packTextures(widthDefault, padding, rectMap, verticalSide)
 			//place texture if size is fit
 			rect.obj.x = area.x;
 			rect.obj.y = area.y;
-			delete rect.name;
-			delete rect.obj;
-			rect.x = area.x;
-			rect.y = area.y;
+			var subTexture = XML('<SubTexture />');
+			subTexture.@name = rect.name;
+			subTexture.@x = rect.obj.x;
+			subTexture.@y = rect.obj.y;
+			subTexture.@width = rect.obj.hPixels;
+			subTexture.@height = rect.obj.vPixels;
+			atlas.appendChild(subTexture);
 			rectList.splice(rectID, 1);
 			remainAreaList.splice(
 				areaID + 1,
@@ -342,6 +341,9 @@ function packTextures(widthDefault, padding, rectMap, verticalSide)
 			area.y += height;
 			area.width = width;
 			area.height -= height;
+			
+			delete rect.name;
+			delete rect.obj;
 		}
 		else
 		{
