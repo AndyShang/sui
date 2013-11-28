@@ -23,6 +23,7 @@ var conf = {};
 var currentNode = conf;
 var tempBitmaps = [];
 var exportGraphic;
+var count = 0;
 
 exportStarling();
 
@@ -38,7 +39,6 @@ function exportStarling()
 	}
 	for each(item in toExport)
 	{
-		fl.trace("--------------------" + item.linkageClassName + "------------");
 		if(item.itemType == 'button' || item.itemType == 'movie clip')
 		{
 			handleItem(item);
@@ -46,10 +46,11 @@ function exportStarling()
 
 		if(item.itemType == "bitmap")
 		{
-			addBitmap(item);
+			addBitmap(item, false);
 		}
 	}
 	exportBitmaps();
+	atlas.@imagePath = dom.name + '.png';
 	FLfile.write(dom.pathURI + ".json", encode(conf));
 	FLfile.write(dom.pathURI + ".xml", atlas);
 }
@@ -80,40 +81,34 @@ function handleItem(item)
 function selectTimeline()
 {
 	var timeline = dom.getTimeline();
+	var layer;
 	for(var i=0;i<timeline.layers.length;i++)
 	{
-		selectLayer(timeline.layers[i])
-	}
-}
-
-function selectLayer(layer)
-{
-	var index = 0;
-	var locked = layer.locked;
-	var visible = layer.visible;
-	if(locked)
-	{
-		layer.locked = false;
-	}
-	if(!visible)
-	{
-		layer.visible = true;
-	}
-	do
-	{
-		fl.getDocumentDOM().getTimeline().setSelectedFrames(index, index);
-		dom.selectNone();
-		if(layer.frames[index].elements.length > 0)
+		layer = timeline.layers[i];var index = 0;
+		var locked = layer.locked;
+		var visible = layer.visible;
+		if(locked)
 		{
-			fl.trace(layer.name +":"+ index);
-
-			selectFrame(layer.frames[index]);
+			layer.locked = false;
 		}
-		index = nextKeyFrame(layer, index);
+		if(!visible)
+		{
+			layer.visible = true;
+		}
+		do
+		{
+			fl.getDocumentDOM().getTimeline().setSelectedFrames(index, index);
+			dom.selectNone();
+			if(layer.frames[index].elements.length > 0)
+			{
+				handleFrame(layer.frames[index]);
+			}
+			index = nextKeyFrame(layer, index);
+		}
+		while(index != -1);
+		layer.locked = locked;
+		layer.visible = visible;
 	}
-	while(index != -1);
-	layer.locked = locked;
-	layer.visible = visible;
 }
 
 function nextKeyFrame(layer, index)
@@ -126,7 +121,7 @@ function nextKeyFrame(layer, index)
 	return nextIndex;
 }
 
-function selectFrame(frame)
+function handleFrame(frame)
 {
 	for each(var element in frame.elements)
 	{
@@ -135,12 +130,12 @@ function selectFrame(frame)
 			var item = element.libraryItem;
 			if(element.instanceType == 'bitmap')
 			{
-				addBitmap(item);
+				addBitmap(item, false);
 				addBitmapConf(element);
 			}
 			else if(element.instanceType == 'symbol')
 			{
-				addSymbolConf(element);
+				var node = addSymbolConf(element);
 				var c = currentItem;
 				handleItem(item);
 				lib.selectItem(c.name);
@@ -152,17 +147,10 @@ function selectFrame(frame)
 		}
 		else if(element.elementType == 'shape')
 		{
-			//select the shape and duplicate it for exporting bitmap
-			dom.selection = [element];
-			dom.clipCopy();
-			dom.clipPaste(true);
-			dom.convertSelectionToBitmap();
-			var bitmapInstance = dom.selection[0];
-			//then we mark it to be exported, which the bitmap just generated.
+			var bitmapInstance = generateBitmap(element);
 			item = bitmapInstance.libraryItem;
-			addBitmap(item);
-			tempBitmaps.push(item.name);
-			
+			addBitmap(item, true);
+			addBitmapConf(bitmapInstance);			
 			//finally delete the bitmap instance from the stage(the item leaves in library)
 			//do not change the original structure of the dom
 			fl.getDocumentDOM().deleteSelection();
@@ -170,6 +158,15 @@ function selectFrame(frame)
 	}
 }
 
+
+function generateBitmap(element)
+{
+	dom.selection = [element];
+	dom.clipCopy();
+	dom.clipPaste(true);
+	dom.convertSelectionToBitmap();
+	return dom.selection[0]
+}
 
 function exportBitmaps()
 {
@@ -185,7 +182,7 @@ function exportBitmaps()
 		bitmapInstance.y = 0;
 		rect.obj = bitmapInstance;
 	}
-	var bound = packTextures(0,0,bitmapsToExport,false);
+	var bound = packTextures(0,1,bitmapsToExport,false);
 	dom.addNewRectangle({left:bound.width-1,top:bound.width-1,right:bound.width,bottom:bound.width},0, false, true);
 	dom.setFillColor('#00000000');
 	dom.selectAll();
@@ -203,20 +200,41 @@ function exportBitmaps()
 function addSymbolConf(instance)
 {
 	var node = {};
-	if(instance.symbolType == "movie clip" || instance.symbolType == "button")
+	if(instance.symbolType == "movie clip")
 	{
-		node.name = instance.name;
+		node.type = "sprite";
 	}
-	conf[currentItem.name][instance.libraryItem.name] = node;
+	else if(instance.symbolType == "button")
+	{
+		node.type = "button";
+	}
+	else if(instance.symbolType == "graphic")
+	{
+		node.type = "sprite";
+	}
+	conf[currentItem.name][getInstanceName(instance)] = node;
+	copyInfo(instance, node);
 	copyTransform(instance, node);
-	node.depth = instance.depth;
+	return node;
 }
 
 function addBitmapConf(instance)
 {
-	var node = {};
-	conf[currentItem.name][instance.libraryItem.name] = node;
+	var node = {type:'bitmap'};
+	conf[currentItem.name][getInstanceName(instance)] = node;
+	node.type = 'bitmap';
+	copyInfo(instance, node);
 	copyTransform(instance, node);
+}
+
+function getInstanceName(instance)
+{
+	return instance.name || ("instance" + (count++));
+}
+
+function copyInfo(instance, node)
+{
+	node.ref = instance.libraryItem.name;
 	node.depth = instance.depth;
 }
 
@@ -256,14 +274,17 @@ function copyTransform(instance, node)
 	}	
 }
 
-function addBitmap(item)
+function addBitmap(item, temp)
 {
 	if(bitmapsToExport[item.name] )
 	{
 		return;
 	}
-	fl.trace("adding bitmap:" + item.name)
 	bitmapsToExport[item.name] = {name:item.name};
+	if(temp)
+	{
+		tempBitmaps.push(item.name);
+	}
 }
 
 function packTextures(widthDefault, padding, rectMap, verticalSide)
