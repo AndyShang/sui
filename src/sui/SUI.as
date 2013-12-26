@@ -25,7 +25,7 @@ package sui
 			this.plugins = new Vector.<IPlugin>();
 		}
 
-		public function initPlugin(plugin:IPlugin):IPlugin
+		public function initPlugin(plugin:IPlugin):SUI
 		{
 			var qName:String = getQualifiedClassName(plugin).replace(/::/g, ".");
 
@@ -34,7 +34,7 @@ package sui
 				plugin.initialize(context);
 				plugins.push(plugin);
 			}
-			return (plugin);
+			return this;
 		}
 
 		public function uninstallPlugin(plugin:*):void
@@ -65,6 +65,15 @@ package sui
 				}
 			}
 			return null;
+		}
+
+		public static function throwError(error:Error):void
+		{
+			if (context.errorHandler && context.errorHandler.handle(error))
+			{
+				return;
+			}
+			throw error;
 		}
 	}
 }
